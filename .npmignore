@@ -17,3 +17,5 @@ LICENSE
 test.ts
 .idea
 .eslintcache
+jest.config.js
+tsconfig.build.json

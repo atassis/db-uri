@@ -4,11 +4,7 @@
     "rootDir": "src"
   },
   "exclude": [
-    "node_modules",
     "lib",
-    "test",
-    "test.ts",
-    "generate-enums.ts",
-    "scripts"
+    "src/**/*.test.ts"
   ]
 }

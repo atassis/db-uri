@@ -1,215 +1,104 @@
-export type ParsedDatabaseURL = {
-  scheme: string;
+type ArrayElement<ArrayType extends readonly unknown[]> =
+  ArrayType extends readonly (infer ElementType)[] ? ElementType : never;
+
+export type ParsedDatabaseURI = {
+  protocol: string;
   username?: string;
   password?: string;
-  hosts: [{ host: string; port?: number }];
-  database: string;
-  options: Record<string, unknown>;
+  hosts: { host: string; port?: number }[];
+  database?: string;
+  options?: Record<string, string>;
 };
 
-function MongodbUriParser(options?: { scheme: string }) {
-  if (options && options.scheme) {
-    this.scheme = options.scheme;
+function encode(urlPart?: string): string {
+  if (!urlPart) {
+    return '';
   }
+  return encodeURIComponent(urlPart);
+}
+function decode(urlPart?: string): string {
+  if (!urlPart) {
+    return '';
+  }
+  return decodeURIComponent(urlPart);
 }
 
-/**
- * Takes a URI of the form:
- *
- *   mongodb://[username[:password]@]host1[:port1][,host2[:port2],...[,hostN[:portN]]][/[database]][?options]
- *
- * and returns an object of the form:
- *
- *   {
- *     scheme: !String,
- *     username: String=,
- *     password: String=,
- *     hosts: [ { host: !String, port: Number= }, ... ],
- *     database: String=,
- *     options: Object=
- *   }
- *
- * scheme and hosts will always be present. Other fields will only be present in the result if they were
- * present in the input.
- *
- * @param {!String} uri
- * @return {Object}
- */
-export function parse(uri: string): ParsedDatabaseURL {
-  const uriObject: ParsedDatabaseURL = {};
+const parseRegex =
+  /(?<protocol>.+?):\/\/(?:(?<username>.*?):(?<password>.*?)@)?(?<hosts>[^/]+)[/]?(?<database>\/?[^?]*)[?]?(?<options>.*)/;
 
-  let i = uri.indexOf('://');
-  if (i < 0) {
-    throw new Error(`No scheme found in URI ${uri}`);
+export function parse(url: string): ParsedDatabaseURI {
+  const match = url.match(parseRegex);
+  if (!match || !match.groups) {
+    throw new Error('Could not parse an url');
   }
-  uriObject.scheme = uri.substring(0, i);
-  if (this.scheme && this.scheme !== uriObject.scheme) {
-    throw new Error(`URI must begin with ${this.scheme}://`);
+  const { groups } = match;
+  if (!groups.protocol) {
+    throw new Error('Protocol should be set');
   }
-  let rest = uri.substring(i + 3);
+  const result: ParsedDatabaseURI = {
+    protocol: groups.protocol,
+    hosts: groups.hosts.split(',').map((s) => {
+      const splitHost = s.split(':');
+      const host: ArrayElement<ParsedDatabaseURI['hosts']> = {
+        host: splitHost[0],
+      };
 
-  i = rest.indexOf('@');
-  if (i >= 0) {
-    const credentials = rest.substring(0, i);
-    rest = rest.substring(i + 1);
-    i = credentials.indexOf(':');
-    if (i >= 0) {
-      uriObject.username = decodeURIComponent(credentials.substring(0, i));
-      uriObject.password = decodeURIComponent(credentials.substring(i + 1));
-    } else {
-      uriObject.username = decodeURIComponent(credentials);
-    }
+      if (splitHost.length > 1) {
+        host.port = Number.parseInt(splitHost[1], 10);
+      }
+      return host;
+    }),
+  };
+  if (groups.username) {
+    result.username = decode(groups.username);
   }
-
-  i = rest.indexOf('?');
-  if (i >= 0) {
-    const options = rest.substring(i + 1);
-    rest = rest.substring(0, i);
-    uriObject.options = {};
-    options.split('&').forEach(function (o) {
-      const iEquals = o.indexOf('=');
-      uriObject.options[decodeURIComponent(o.substring(0, iEquals))] =
-        decodeURIComponent(o.substring(iEquals + 1));
-    });
+  if (groups.password) {
+    result.password = decode(groups.password);
   }
-
-  i = rest.indexOf('/');
-  if (i >= 0) {
-    // Make sure the database name isn't the empty string
-    if (i < rest.length - 1) {
-      uriObject.database = decodeURIComponent(rest.substring(i + 1));
-    }
-    rest = rest.substring(0, i);
+  if (groups.database) {
+    result.database = decode(groups.database);
   }
-
-  this._parseAddress(rest, uriObject);
-
-  return uriObject;
+  if (groups.options) {
+    result.options = groups.options
+      .split('&')
+      .reduce<Record<string, string>>((accum, val) => {
+        const [k, v] = val.split('=');
+        // eslint-disable-next-line no-param-reassign
+        accum[decode(k)] = decode(v);
+        return accum;
+      }, {});
+  }
+  return result;
 }
 
-/**
- * Parses the address into the uriObject, mutating it.
- *
- * @param {!String} address
- * @param {!Object} uriObject
- * @private
- */
-MongodbUriParser.prototype._parseAddress = function _parseAddress(
-  address: string,
-  uriObject: ParsedDatabaseURL,
-) {
-  uriObject.hosts = [];
-  address.split(',').forEach(function (h) {
-    const i = h.indexOf(':');
-    if (i >= 0) {
-      uriObject.hosts.push({
-        host: decodeURIComponent(h.substring(0, i)),
-        port: Number.parseInt(h.substring(i + 1), 10),
-      });
-    } else {
-      uriObject.hosts.push({ host: decodeURIComponent(h) });
-    }
-  });
-};
-
-/**
- * Takes a URI object and returns a URI string of the form:
- *
- *   mongodb://[username[:password]@]host1[:port1][,host2[:port2],...[,hostN[:portN]]][/[database]][?options]
- *
- * @param {Object=} uriObject
- * @return {String}
- */
-MongodbUriParser.prototype.format = function format(uriObject) {
-  if (!uriObject) {
-    return `${this.scheme || 'mongodb'}://localhost`;
+function getAuth(username?: string, password?: string): string {
+  if (!username && !password) {
+    return '';
   }
-
-  if (this.scheme && uriObject.scheme && this.scheme !== uriObject.scheme) {
-    throw new Error(`Scheme not supported: ${uriObject.scheme}`);
+  if (!password) {
+    return `${encode(username)}@`;
   }
-  let uri = `${this.scheme || uriObject.scheme || 'mongodb'}://`;
+  return `${encode(username)}:${encode(password)}@`;
+}
 
-  if (uriObject.username) {
-    uri += encodeURIComponent(uriObject.username);
-    // While it's not to the official spec, we allow empty passwords
-    if (uriObject.password) {
-      uri += `:${encodeURIComponent(uriObject.password)}`;
-    }
-    uri += '@';
+export function stringify(dbUrl: ParsedDatabaseURI): string {
+  const { protocol, username, password, hosts, database, options } = dbUrl;
+  const authString = getAuth(username, password);
+  const hostsString = hosts
+    .map(({ host, port }) => {
+      let result = encode(host);
+      if (port) {
+        result += `:${port}`;
+      }
+      return result;
+    })
+    .join(',');
+  const db = database ? `/${database}` : '';
+  let optionsString = '';
+  if (options) {
+    optionsString = `?${Object.entries(options)
+      .map(([k, v]) => `${encode(k)}=${encode(v)}`)
+      .join('&')}`;
   }
-
-  uri += this._formatAddress(uriObject);
-
-  // While it's not to the official spec, we only put a slash if there's a database, independent of whether there are options
-  if (uriObject.database) {
-    uri += `/${encodeURIComponent(uriObject.database)}`;
-  }
-
-  if (uriObject.options) {
-    Object.keys(uriObject.options).forEach(function (k, i) {
-      uri += i === 0 ? '?' : '&';
-      uri += `${encodeURIComponent(k)}=${encodeURIComponent(
-        uriObject.options[k],
-      )}`;
-    });
-  }
-
-  return uri;
-};
-
-/**
- * Formats the address portion of the uriObject, returning it.
- *
- * @param {!Object} uriObject
- * @return {String}
- * @private
- */
-MongodbUriParser.prototype._formatAddress = function _formatAddress(uriObject) {
-  let address = '';
-  uriObject.hosts.forEach(function (h, i) {
-    if (i > 0) {
-      address += ',';
-    }
-    address += encodeURIComponent(h.host);
-    if (h.port) {
-      address += `:${encodeURIComponent(h.port)}`;
-    }
-  });
-  return address;
-};
-
-/**
- * Takes either a URI object or string and returns a Mongoose connection string. Specifically, instead of listing all
- * hosts and ports in a single URI, a Mongoose connection string contains a list of URIs each with a single host and
- * port pair.
- *
- * Useful in environments where a MongoDB URI environment variable is provided, but needs to be programmatically
- * transformed into a string digestible by mongoose.connect()--for example, when deploying to a PaaS like Heroku
- * using a MongoDB add-on like MongoLab.
- *
- * @param {!Object|String} uri
- * @return {String}
- */
-MongodbUriParser.prototype.formatMongoose = function formatMongoose(uri) {
-  const parser = this;
-  if (typeof uri === 'string') {
-    uri = parser.parse(uri);
-  }
-  if (!uri) {
-    return parser.format(uri);
-  }
-  let connectionString = '';
-  uri.hosts.forEach(function (h, i) {
-    if (i > 0) {
-      connectionString += ',';
-    }
-    // This trick is okay because format() never dynamically inspects the keys in its argument
-    const singleUriObject = Object.create(uri);
-    singleUriObject.hosts = [h];
-    connectionString += parser.format(singleUriObject);
-  });
-  return connectionString;
-};
-
-export { MongodbUriParser };
+  return `${protocol}://${authString}${hostsString}${db}${optionsString}`;
+}

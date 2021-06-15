@@ -5,7 +5,7 @@ const normalUrls = [
   'jdbc:mysql://192.168.29.20:3306,192.168.29.20:6306/mysql',
 ];
 
-test('Parses different URLs', () => {
+test('Parses different URIs', () => {
   for (const url of normalUrls) {
     parse(url);
   }
