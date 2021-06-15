@@ -1,5 +1,5 @@
 {
-  "name": "db-uri",
+  "name": "@atassis/db-uri",
   "version": "0.0.2",
   "description": "Node js database uri parser written in typescript",
   "main": "lib/index.js",
@@ -33,6 +33,10 @@
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/atassis/db-uri/issues"
+  },
+  "private": false,
+  "publishConfig": {
+    "access": "public"
   },
   "homepage": "https://github.com/atassis/db-uri#readme",
   "devDependencies": {
