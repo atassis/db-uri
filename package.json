@@ -5,12 +5,12 @@
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "scripts": {
-    "test": "jest",
     "build": "rm -rf lib && tsc -p tsconfig.build.json",
     "build:dev": "tsc --watch",
     "lint": "eslint src",
-    "prepare": "npm run build",
-    "release:dev": "ts-node scripts/configure-prerelease.ts next ./package.json"
+    "prepare": "husky install",
+    "prepublish": "npm run build",
+    "test": "jest"
   },
   "engines": {
     "node": ">=12.x <=16.x"
