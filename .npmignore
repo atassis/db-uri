@@ -19,3 +19,4 @@ test.ts
 .eslintcache
 jest.config.js
 tsconfig.build.json
+.husky
